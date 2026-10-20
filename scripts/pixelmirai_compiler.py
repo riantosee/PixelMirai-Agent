@@ -2,45 +2,50 @@
 """
 PixelMirai Compiler — Unified CLI & Python API
 ================================================
-Converts .pxm.dsl scripts → PNG + GIF + CRT + .pxm
-
-Usage:
-  python pixelmirai_compiler.py <script.pxm.dsl> [options]
-
-Options:
-  --out <dir>      Output directory (default: ../public/exports/)
-  --only <fmt>     Only export specific format: png|gif|crt|pxm
-  --verbose        Debug output (print each pixel placed)
-  --name <name>    Override output filename (without extension)
-  --scale <n>      Override scale factor (1-16)
-  --crt            Force CRT filter on
-  --no-crt         Force CRT filter off
-  --fps <n>        Override frame rate for GIF
+Deterministic pixel art compiler for PixelMirai DSL (.pxm.dsl)
+Compiles DSL scripts to PNG (with alpha transparency), GIF, CRT, and .pxm.
 
 Author: RianFix / PixelMirai Engine
-Version: 1.0.0
+Version: 1.1.0
+License: MIT
 """
 
-import sys
-import os
-import json
-import re
-import struct
+from __future__ import annotations
+
 import argparse
+import json
+import os
+import re
+import shlex
+import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 try:
-    from PIL import Image, ImageDraw, ImageFilter
+    from PIL import Image, ImageDraw
 except ImportError:
-    print("❌ Pillow not installed. Run: pip install Pillow")
+    print("Error: Pillow is required. Install it using: pip install Pillow")
     sys.exit(1)
 
 
 # ═══════════════════════════════════════════════════════════════
-# PALETTE PRESETS
+# CONSTANTS & RESOURCE LIMITS
 # ═══════════════════════════════════════════════════════════════
 
-PALETTES = {
+VERSION = "1.1.0"
+
+MIN_CANVAS_DIM = 1
+MAX_CANVAS_DIM = 2048
+
+MIN_SCALE = 1
+MAX_SCALE = 64
+
+MIN_FPS = 1
+MAX_FPS = 120
+
+MAX_FRAMES = 1000
+
+PALETTES: Dict[str, List[str]] = {
     'pico8': [
         '#000000', '#1d2b53', '#7e2553', '#008751',
         '#ab5236', '#5f574f', '#c2c3c7', '#fff1e8',
@@ -68,19 +73,68 @@ PALETTES = {
 
 
 # ═══════════════════════════════════════════════════════════════
+# EXCEPTIONS
+# ═══════════════════════════════════════════════════════════════
+
+class PixelMiraiError(Exception):
+    """Base exception for PixelMirai engine."""
+    pass
+
+
+class DSLSyntaxError(PixelMiraiError):
+    """Raised when DSL parsing encounters syntax or argument errors."""
+    def __init__(self, message: str, line_num: int, line_text: str = ""):
+        self.message = message
+        self.line_num = line_num
+        self.line_text = line_text
+        context = f" on line {line_num}: '{line_text}'" if line_text else f" on line {line_num}"
+        super().__init__(f"{message}{context}")
+
+
+class ValidationError(PixelMiraiError):
+    """Raised when parameters or constraints fail validation."""
+    pass
+
+
+class PXMChecksumError(PixelMiraiError):
+    """Raised when a PXM file fails checksum verification."""
+    pass
+
+
+# ═══════════════════════════════════════════════════════════════
 # UTILITIES
 # ═══════════════════════════════════════════════════════════════
 
-def hex_to_rgb(hex_color: str) -> tuple:
-    """Convert #rrggbb to (r, g, b)."""
-    h = hex_color.lstrip('#')
+HEX_REGEX = re.compile(r'^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$')
+
+
+def normalize_hex(hex_str: str) -> str:
+    """Validate and normalize hex color to lowercase #rrggbb or #rrggbbaa."""
+    s = hex_str.strip()
+    if not HEX_REGEX.match(s):
+        raise ValidationError(f"Invalid hexadecimal color: '{hex_str}'")
+    s = s.lower()
+    h = s.lstrip('#')
     if len(h) == 3:
-        h = ''.join(c * 2 for c in h)
-    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+        return '#' + ''.join(c * 2 for c in h)
+    elif len(h) == 4:
+        return '#' + ''.join(c * 2 for c in h)
+    return '#' + h
+
+
+def hex_to_rgba(hex_color: str) -> Tuple[int, int, int, int]:
+    """Convert hex string (#rgb, #rgba, #rrggbb, #rrggbbaa) to (r, g, b, a)."""
+    norm = normalize_hex(hex_color)
+    h = norm.lstrip('#')
+    r = int(h[0:2], 16)
+    g = int(h[2:4], 16)
+    b = int(h[4:6], 16)
+    a = int(h[6:8], 16) if len(h) == 8 else 255
+    return (r, g, b, a)
 
 
 def fnv1a_32(data: bytes) -> str:
-    """FNV-1a 32-bit hash (matches lib/project-file.js)."""
+    """Compute FNV-1a 32-bit checksum."""
     h = 2166136261
     for b in data:
         h ^= b
@@ -89,14 +143,15 @@ def fnv1a_32(data: bytes) -> str:
 
 
 def safe_print(msg: str):
-    """Print that handles Windows CP1252 by replacing unknown chars."""
+    """Safe console print handling Windows CP1252 character encoding."""
     try:
         print(msg)
     except UnicodeEncodeError:
-        print(msg.encode('ascii', errors='replace').decode('ascii'))
+        safe_msg = msg.encode('ascii', errors='replace').decode('ascii')
+        print(safe_msg)
 
 
-def ensure_dir(path: str):
+def ensure_dir(path: Union[str, Path]):
     Path(path).mkdir(parents=True, exist_ok=True)
 
 
@@ -105,74 +160,92 @@ def ensure_dir(path: str):
 # ═══════════════════════════════════════════════════════════════
 
 class PixelLayer:
-    def __init__(self, name: str, width: int, height: int, verbose=False):
-        self.name = name
-        self.width = width
-        self.height = height
-        self.verbose = verbose
-        # pixels stored as dict {(x,y): '#rrggbb'}
-        self.pixels: dict = {}
+    """A 2D layer holding discrete pixel coordinates and their hex colors."""
 
-    def _clamp(self, x, y):
+    def __init__(self, name: str, width: int, height: int, verbose: bool = False):
+        if not name:
+            raise ValidationError("Layer name cannot be empty")
+        self.name: str = name
+        self.width: int = width
+        self.height: int = height
+        self.verbose: bool = verbose
+        # Pixels stored as {(x, y): normalized_hex}
+        self.pixels: Dict[Tuple[int, int], str] = {}
+
+    def is_in_bounds(self, x: int, y: int) -> bool:
         return 0 <= x < self.width and 0 <= y < self.height
 
     def pixel(self, x: int, y: int, color: str):
-        x, y = int(x), int(y)
-        if self._clamp(x, y):
-            self.pixels[(x, y)] = color
+        norm_color = normalize_hex(color)
+        if self.is_in_bounds(x, y):
+            self.pixels[(x, y)] = norm_color
             if self.verbose:
-                print(f"  px ({x},{y}) = {color}")
+                safe_print(f"  layer '{self.name}' px ({x}, {y}) = {norm_color}")
 
     def rect(self, x: int, y: int, w: int, h: int, color: str):
-        for dy in range(int(h)):
-            for dx in range(int(w)):
-                self.pixel(int(x) + dx, int(y) + dy, color)
+        if w <= 0 or h <= 0:
+            raise ValidationError(f"Rectangle width and height must be > 0 (got w={w}, h={h})")
+        for dy in range(h):
+            for dx in range(w):
+                self.pixel(x + dx, y + dy, color)
 
     def hline(self, y: int, x1: int, x2: int, color: str):
-        for x in range(int(x1), int(x2) + 1):
-            self.pixel(x, int(y), color)
+        start = min(x1, x2)
+        end = max(x1, x2)
+        for x in range(start, end + 1):
+            self.pixel(x, y, color)
 
     def vline(self, x: int, y1: int, y2: int, color: str):
-        for y in range(int(y1), int(y2) + 1):
-            self.pixel(int(x), y, color)
+        start = min(y1, y2)
+        end = max(y1, y2)
+        for y in range(start, end + 1):
+            self.pixel(x, y, color)
 
     def circle(self, cx: int, cy: int, radius: int, color: str):
-        """Bresenham circle (outline only)."""
-        cx, cy, r = int(cx), int(cy), int(radius)
-        x, y = r, 0
+        """Bresenham circle outline."""
+        if radius < 0:
+            raise ValidationError(f"Circle radius must be >= 0 (got {radius})")
+        if radius == 0:
+            self.pixel(cx, cy, color)
+            return
+
+        x = radius
+        y = 0
         err = 0
         while x >= y:
-            for px, py in [
-                (cx+x, cy+y), (cx+y, cy+x),
-                (cx-y, cy+x), (cx-x, cy+y),
-                (cx-x, cy-y), (cx-y, cy-x),
-                (cx+y, cy-x), (cx+x, cy-y),
-            ]:
+            for px, py in (
+                (cx + x, cy + y), (cx + y, cy + x),
+                (cx - y, cy + x), (cx - x, cy + y),
+                (cx - x, cy - y), (cx - y, cy - x),
+                (cx + y, cy - x), (cx + x, cy - y),
+            ):
                 self.pixel(px, py, color)
             y += 1
-            err += 1 + 2*y
-            if 2*(err-x) + 1 > 0:
+            err += 1 + 2 * y
+            if 2 * (err - x) + 1 > 0:
                 x -= 1
-                err += 1 - 2*x
+                err += 1 - 2 * x
 
     def fillcircle(self, cx: int, cy: int, radius: int, color: str):
-        cx, cy, r = int(cx), int(cy), int(radius)
-        for y in range(cy - r, cy + r + 1):
-            for x in range(cx - r, cx + r + 1):
-                if (x - cx)**2 + (y - cy)**2 <= r*r:
+        """Solid rasterized circle."""
+        if radius < 0:
+            raise ValidationError(f"Circle radius must be >= 0 (got {radius})")
+        r2 = radius * radius
+        for y in range(cy - radius, cy + radius + 1):
+            for x in range(cx - radius, cx + radius + 1):
+                if (x - cx) ** 2 + (y - cy) ** 2 <= r2:
                     self.pixel(x, y, color)
 
     def render_to_image(self, base_image: Image.Image) -> Image.Image:
-        """Composite this layer onto base_image (returns new image)."""
-        img = base_image.copy()
-        draw = ImageDraw.Draw(img)
+        """Composite this layer onto base_image."""
+        draw = ImageDraw.Draw(base_image)
         for (x, y), color in self.pixels.items():
-            rgb = hex_to_rgb(color)
-            draw.point((x, y), fill=rgb)
-        return img
+            rgba = hex_to_rgba(color)
+            draw.point((x, y), fill=rgba)
+        return base_image
 
-    def to_palette_pixels(self, palette: list) -> list:
-        """Convert pixel dict to [[x, y, paletteIdx], ...]."""
+    def to_palette_pixels(self, palette: List[str]) -> List[List[int]]:
+        """Convert pixels to [[x, y, palette_index], ...]."""
         result = []
         pal_lower = [c.lower() for c in palette]
         for (x, y), color in self.pixels.items():
@@ -180,13 +253,13 @@ class PixelLayer:
             if c in pal_lower:
                 idx = pal_lower.index(c)
             else:
-                # Find closest color
-                r1, g1, b1 = hex_to_rgb(color)
+                # Nearest color fallback in RGB Euclidean space
+                r1, g1, b1, _ = hex_to_rgba(color)
                 best_idx = 0
                 best_dist = float('inf')
                 for i, pc in enumerate(pal_lower):
-                    r2, g2, b2 = hex_to_rgb(pc)
-                    d = (r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2
+                    r2, g2, b2, _ = hex_to_rgba(pc)
+                    d = (r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2
                     if d < best_dist:
                         best_dist = d
                         best_idx = i
@@ -196,17 +269,21 @@ class PixelLayer:
 
 
 # ═══════════════════════════════════════════════════════════════
-# FRAME
+# PIXEL FRAME
 # ═══════════════════════════════════════════════════════════════
 
 class PixelFrame:
-    def __init__(self, index: int, width: int, height: int, verbose=False):
-        self.index = index
-        self.width = width
-        self.height = height
-        self.verbose = verbose
-        self.layers: list[PixelLayer] = []
-        self._current_layer: PixelLayer | None = None
+    """A container for ordered layers at a specific timeline frame index."""
+
+    def __init__(self, index: int, width: int, height: int, verbose: bool = False):
+        if index < 0:
+            raise ValidationError(f"Frame index must be >= 0 (got {index})")
+        self.index: int = index
+        self.width: int = width
+        self.height: int = height
+        self.verbose: bool = verbose
+        self.layers: List[PixelLayer] = []
+        self._current_layer: Optional[PixelLayer] = None
 
     def new_layer(self, name: str) -> PixelLayer:
         layer = PixelLayer(name, self.width, self.height, self.verbose)
@@ -215,10 +292,10 @@ class PixelFrame:
         return layer
 
     def get_or_create_layer(self, name: str) -> PixelLayer:
-        for l in self.layers:
-            if l.name == name:
-                self._current_layer = l
-                return l
+        for layer in self.layers:
+            if layer.name == name:
+                self._current_layer = layer
+                return layer
         return self.new_layer(name)
 
     @property
@@ -227,47 +304,85 @@ class PixelFrame:
             return self.new_layer('default')
         return self._current_layer
 
-    def render(self, background_color: tuple) -> Image.Image:
-        img = Image.new('RGB', (self.width, self.height), background_color)
+    def render(self, bg_rgba: Tuple[int, int, int, int]) -> Image.Image:
+        """Render all layers composited over the background."""
+        img = Image.new('RGBA', (self.width, self.height), bg_rgba)
         for layer in self.layers:
             img = layer.render_to_image(img)
         return img
 
 
 # ═══════════════════════════════════════════════════════════════
-# ENGINE
+# PIXELMIRAI ENGINE
 # ═══════════════════════════════════════════════════════════════
 
 class PixelMiraiEngine:
-    """Core rendering engine."""
+    """Core pixel art compilation and export engine."""
 
-    def __init__(self, width=32, height=32, verbose=False):
-        self.width = width
-        self.height = height
-        self.verbose = verbose
-        self.palette: list = list(PALETTES['pico8'])
-        self.background: tuple = (29, 43, 83)   # dark-blue
+    def __init__(self, width: int = 32, height: int = 32, verbose: bool = False):
+        self.validate_dimensions(width, height)
+        self.width: int = width
+        self.height: int = height
+        self.verbose: bool = verbose
+        self.palette: List[str] = list(PALETTES['pico8'])
+        self.is_transparent: bool = False
+        self.background_color: Tuple[int, int, int, int] = (29, 43, 83, 255)  # default dark-blue
         self.scale: int = 8
         self.crt: bool = False
         self.fps: int = 6
         self.name: str = 'untitled'
-        self.frames: list[PixelFrame] = []
-        self._current_frame: PixelFrame | None = None
+        self.frames: List[PixelFrame] = []
+        self._current_frame: Optional[PixelFrame] = None
 
-    def set_palette(self, name_or_list):
+    @staticmethod
+    def validate_dimensions(width: int, height: int):
+        if not (MIN_CANVAS_DIM <= width <= MAX_CANVAS_DIM):
+            raise ValidationError(
+                f"Canvas width must be between {MIN_CANVAS_DIM} and {MAX_CANVAS_DIM} (got {width})"
+            )
+        if not (MIN_CANVAS_DIM <= height <= MAX_CANVAS_DIM):
+            raise ValidationError(
+                f"Canvas height must be between {MIN_CANVAS_DIM} and {MAX_CANVAS_DIM} (got {height})"
+            )
+
+    def set_palette(self, name_or_list: Union[str, List[str]]):
         if isinstance(name_or_list, list):
-            self.palette = name_or_list
-        elif name_or_list in PALETTES:
-            self.palette = list(PALETTES[name_or_list])
+            validated = [normalize_hex(c) for c in name_or_list]
+            if not validated:
+                raise ValidationError("Palette cannot be empty")
+            self.palette = validated
         else:
-            raise ValueError(f"Unknown palette preset: {name_or_list}")
+            key = name_or_list.lower().replace('-', '').replace('_', '')
+            if key not in PALETTES:
+                raise ValidationError(
+                    f"Unknown palette preset '{name_or_list}'. Available: {list(PALETTES.keys())}"
+                )
+            self.palette = list(PALETTES[key])
 
-    def set_background(self, hex_color: str):
-        self.background = hex_to_rgb(hex_color)
+    def set_background(self, value: str):
+        v = value.strip().lower()
+        if v == 'transparent':
+            self.is_transparent = True
+            self.background_color = (0, 0, 0, 0)
+        else:
+            self.is_transparent = False
+            self.background_color = hex_to_rgba(value)
 
-    def new_frame(self, index: int | None = None) -> PixelFrame:
+    def set_scale(self, scale: int):
+        if not (MIN_SCALE <= scale <= MAX_SCALE):
+            raise ValidationError(f"Scale factor must be between {MIN_SCALE} and {MAX_SCALE} (got {scale})")
+        self.scale = scale
+
+    def set_fps(self, fps: int):
+        if not (MIN_FPS <= fps <= MAX_FPS):
+            raise ValidationError(f"FPS must be between {MIN_FPS} and {MAX_FPS} (got {fps})")
+        self.fps = fps
+
+    def new_frame(self, index: Optional[int] = None) -> PixelFrame:
         if index is None:
             index = len(self.frames)
+        if len(self.frames) >= MAX_FRAMES:
+            raise ValidationError(f"Maximum frame limit reached ({MAX_FRAMES})")
         frame = PixelFrame(index, self.width, self.height, self.verbose)
         self.frames.append(frame)
         self._current_frame = frame
@@ -287,100 +402,115 @@ class PixelMiraiEngine:
         return self._current_frame
 
     def _render_frame(self, frame: PixelFrame) -> Image.Image:
-        return frame.render(self.background)
+        return frame.render(self.background_color)
 
     def _scale_image(self, img: Image.Image, scale: int) -> Image.Image:
-        return img.resize(
-            (img.width * scale, img.height * scale),
-            Image.NEAREST
-        )
+        return img.resize((img.width * scale, img.height * scale), Image.NEAREST)
 
     def _apply_crt(self, img: Image.Image) -> Image.Image:
-        """Apply CRT scanline + vignette effect."""
+        """Apply CRT scanlines and radial vignette simulation."""
         w, h = img.size
-        result = Image.new('RGB', (w, h), (0, 0, 0))
-        pixels_src = img.load()
-        pixels_dst = result.load()
+        # CRT monitors operate in dark room environments; composite transparency over dark background
+        comp = Image.new('RGB', (w, h), (13, 17, 23))
+        if img.mode == 'RGBA':
+            comp.paste(img, (0, 0), img)
+        else:
+            comp.paste(img, (0, 0))
 
-        # Copy with scanline darkening
+        src_pix = comp.load()
+        out_img = Image.new('RGB', (w, h), (0, 0, 0))
+        dst_pix = out_img.load()
+
+        # Step 1: Scanline darkening
         for y in range(h):
-            scanline = (y % 2 == 1)
+            is_scanline = (y % 2 == 1)
             for x in range(w):
-                r, g, b = pixels_src[x, y]
-                if scanline:
-                    # Darken every other row (CRT scanline)
+                r, g, b = src_pix[x, y]
+                if is_scanline:
                     r = int(r * 0.55)
                     g = int(g * 0.55)
                     b = int(b * 0.55)
-                pixels_dst[x, y] = (r, g, b)
+                dst_pix[x, y] = (r, g, b)
 
-        # Vignette overlay
+        # Step 2: Radial vignette
         cx, cy = w // 2, h // 2
-        max_dist = ((cx**2) + (cy**2)) ** 0.5
-        pixels_out = result.load()
+        max_dist = ((cx ** 2) + (cy ** 2)) ** 0.5
         for y in range(h):
             for x in range(w):
-                dist = ((x - cx)**2 + (y - cy)**2) ** 0.5
-                factor = 1.0 - 0.45 * (dist / max_dist) ** 2
-                r, g, b = pixels_out[x, y]
-                pixels_out[x, y] = (
-                    int(r * factor),
-                    int(g * factor),
-                    int(b * factor),
-                )
+                dist = ((x - cx) ** 2 + (y - cy) ** 2) ** 0.5
+                factor = max(0.0, 1.0 - 0.45 * (dist / max_dist) ** 2)
+                r, g, b = dst_pix[x, y]
+                dst_pix[x, y] = (int(r * factor), int(g * factor), int(b * factor))
 
-        return result
+        return out_img
 
     # ── Exports ──────────────────────────────────────────────
 
-    def _log(self, msg: str):
-        """Safe print that strips non-ASCII emoji for Windows CP1252 terminals."""
-        safe_print(msg)
-
-    def export_png(self, path: str, scale: int | None = None):
-        ensure_dir(str(Path(path).parent))
+    def export_png(self, path: Union[str, Path], scale: Optional[int] = None):
+        ensure_dir(Path(path).parent)
         sc = scale or self.scale
-        img = self._render_frame(self.frames[0] if self.frames else self.new_frame())
+        frame = self.frames[0] if self.frames else self.new_frame()
+        img = self._render_frame(frame)
         img = self._scale_image(img, sc)
-        img.save(path)
-        self._log(f"[OK] PNG  -> {path}  ({img.width}x{img.height})")
 
-    def export_crt(self, path: str, scale: int | None = None):
-        ensure_dir(str(Path(path).parent))
+        if not self.is_transparent:
+            # Convert to RGB for clean opaque PNG output
+            img = img.convert('RGB')
+
+        img.save(str(path))
+        safe_print(f"[OK] PNG  -> {path} ({img.width}x{img.height}, mode={img.mode})")
+
+    def export_crt(self, path: Union[str, Path], scale: Optional[int] = None):
+        ensure_dir(Path(path).parent)
         sc = scale or self.scale
-        img = self._render_frame(self.frames[0] if self.frames else self.new_frame())
+        frame = self.frames[0] if self.frames else self.new_frame()
+        img = self._render_frame(frame)
         img = self._scale_image(img, sc)
-        img = self._apply_crt(img)
-        img.save(path)
-        self._log(f"[OK] CRT  -> {path}  ({img.width}x{img.height})")
+        crt_img = self._apply_crt(img)
+        crt_img.save(str(path))
+        safe_print(f"[OK] CRT  -> {path} ({crt_img.width}x{crt_img.height})")
 
-    def export_gif(self, path: str, fps: int | None = None, scale: int | None = None):
-        ensure_dir(str(Path(path).parent))
+    def export_gif(self, path: Union[str, Path], fps: Optional[int] = None, scale: Optional[int] = None):
+        ensure_dir(Path(path).parent)
         sc = scale or self.scale
-        _fps = fps or self.fps
-        duration = int(1000 / _fps)
+        fps_val = fps or self.fps
+        duration = max(10, int(1000 / fps_val))
 
         if not self.frames:
             self.new_frame()
 
-        frames_rendered = []
+        frames_rendered: List[Image.Image] = []
         for frame in sorted(self.frames, key=lambda f: f.index):
-            img = self._render_frame(frame)
-            img = self._scale_image(img, sc)
-            frames_rendered.append(img.convert('P', palette=Image.ADAPTIVE))
+            raw = self._render_frame(frame)
+            scaled = self._scale_image(raw, sc)
 
-        frames_rendered[0].save(
-            path,
-            save_all=True,
-            append_images=frames_rendered[1:],
-            loop=0,
-            duration=duration,
-            optimize=False,
-        )
-        self._log(f"[OK] GIF  -> {path}  ({len(frames_rendered)} frames @ {_fps}fps)")
+            if self.is_transparent:
+                # Convert RGBA to palette with transparent color at index 0
+                alpha = scaled.split()[-1]
+                p_img = scaled.convert('RGB').convert('P', palette=Image.ADAPTIVE, colors=255)
+                # Create mask for transparency
+                mask = Image.eval(alpha, lambda a: 255 if a <= 128 else 0)
+                p_img.paste(255, mask)
+                frames_rendered.append(p_img)
+            else:
+                frames_rendered.append(scaled.convert('RGB').convert('P', palette=Image.ADAPTIVE))
 
-    def export_pxm(self, path: str):
-        ensure_dir(str(Path(path).parent))
+        save_kwargs: Dict[str, Any] = {
+            'save_all': True,
+            'append_images': frames_rendered[1:],
+            'loop': 0,
+            'duration': duration,
+            'optimize': False,
+        }
+        if self.is_transparent:
+            save_kwargs['transparency'] = 255
+            save_kwargs['disposal'] = 2
+
+        frames_rendered[0].save(str(path), **save_kwargs)
+        safe_print(f"[OK] GIF  -> {path} ({len(frames_rendered)} frames @ {fps_val}fps)")
+
+    def export_pxm(self, path: Union[str, Path]):
+        ensure_dir(Path(path).parent)
         frames_data = []
         for frame in sorted(self.frames, key=lambda f: f.index):
             layers_data = []
@@ -395,7 +525,7 @@ class PixelMiraiEngine:
                 'layers': layers_data,
             })
 
-        project = {
+        project: Dict[str, Any] = {
             'version': '1.0',
             'format': 'PixelMirai',
             'name': self.name,
@@ -406,17 +536,93 @@ class PixelMiraiEngine:
             'fps': self.fps,
         }
 
-        # Compute checksum BEFORE adding it
-        content_bytes = json.dumps(
-            {k: v for k, v in project.items()},
-            separators=(',', ':'), sort_keys=True
-        ).encode('utf-8')
+        # Canonical FNV-1a checksum calculation
+        content_bytes = json.dumps(project, separators=(',', ':'), sort_keys=True).encode('utf-8')
         project['checksum'] = fnv1a_32(content_bytes)
 
-        with open(path, 'w', encoding='utf-8') as f:
+        with open(str(path), 'w', encoding='utf-8') as f:
             json.dump(project, f, separators=(',', ':'))
 
-        self._log(f"[OK] PXM  -> {path}  (checksum: {project['checksum']})")
+        safe_print(f"[OK] PXM  -> {path} (checksum: {project['checksum']})")
+
+    # ── PXM Loading & Round-Trip ─────────────────────────────
+
+    @classmethod
+    def load_pxm(cls, path: Union[str, Path], verify_checksum: bool = True) -> PixelMiraiEngine:
+        """Load and validate a .pxm project file into a PixelMiraiEngine instance."""
+        p = Path(path)
+        if not p.is_file():
+            raise FileNotFoundError(f"PXM file not found: {path}")
+
+        with open(p, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        if not isinstance(data, dict):
+            raise ValidationError("Invalid PXM file: root must be a JSON object")
+
+        if data.get('format') != 'PixelMirai':
+            raise ValidationError(f"Invalid format identifier: '{data.get('format')}' (expected 'PixelMirai')")
+
+        if verify_checksum:
+            stored_checksum = data.get('checksum')
+            if not stored_checksum:
+                raise PXMChecksumError("PXM file is missing required 'checksum' field")
+
+            # Try canonical schema checksum
+            project_copy = {k: v for k, v in data.items() if k != 'checksum'}
+            canonical = json.dumps(project_copy, separators=(',', ':'), sort_keys=True).encode('utf-8')
+            computed = fnv1a_32(canonical)
+
+            if computed != stored_checksum:
+                # Fallback to studio project schema checksum
+                studio_canonical = {
+                    'projectName': data.get('projectName'),
+                    'size': data.get('size'),
+                    'frames': data.get('frames'),
+                    'palette': data.get('palette'),
+                    'settings': data.get('settings'),
+                }
+                c_bytes = json.dumps(studio_canonical, separators=(',', ':')).encode('utf-8')
+                studio_computed = fnv1a_32(c_bytes)
+                if studio_computed != stored_checksum:
+                    raise PXMChecksumError(f"Checksum mismatch: computed {computed} != stored {stored_checksum}")
+
+        # Dimension extraction (supports both width/height and size)
+        width = int(data.get('width', data.get('size', 32)))
+        height = int(data.get('height', data.get('size', 32)))
+        engine = cls(width=width, height=height)
+        engine.name = str(data.get('name', data.get('projectName', p.stem)))
+        engine.palette = [normalize_hex(c) for c in data.get('palette', PALETTES['pico8'])]
+        engine.fps = int(data.get('fps', 6))
+
+        for f_idx, f_data in enumerate(data.get('frames', [])):
+            actual_idx = int(f_data.get('index', f_idx))
+            frame = engine.get_or_create_frame(actual_idx)
+            for l_data in f_data.get('layers', []):
+                l_name = str(l_data.get('name', 'default'))
+                layer = frame.get_or_create_layer(l_name)
+                pixels_data = l_data.get('pixels', [])
+
+                if not pixels_data:
+                    continue
+
+                first_elem = pixels_data[0]
+                if isinstance(first_elem, list):
+                    # Standard v1.0 sparse format: [[x, y, palette_index], ...]
+                    for px in pixels_data:
+                        x, y, pal_idx = int(px[0]), int(px[1]), int(px[2])
+                        if 0 <= pal_idx < len(engine.palette):
+                            color = engine.palette[pal_idx]
+                            layer.pixel(x, y, color)
+                elif isinstance(first_elem, (str, type(None))):
+                    # Studio flat 1D grid format: ["#hex", None, ...]
+                    for idx, col in enumerate(pixels_data):
+                        if col and col != 'transparent':
+                            x = idx % width
+                            y = idx // width
+                            layer.pixel(x, y, col)
+
+        return engine
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -424,189 +630,273 @@ class PixelMiraiEngine:
 # ═══════════════════════════════════════════════════════════════
 
 class DSLParser:
-    """Parse .pxm.dsl scripts into PixelMiraiEngine calls."""
+    """Strict and reliable parser for PixelMirai DSL scripts."""
 
-    def __init__(self, verbose=False):
+    def __init__(self, verbose: bool = False, strict: bool = True):
         self.verbose = verbose
+        self.strict = strict
 
-    def parse_file(self, dsl_path: str) -> PixelMiraiEngine:
-        with open(dsl_path, 'r', encoding='utf-8') as f:
+    @staticmethod
+    def _strip_comments_and_tokenize(line: str) -> List[str]:
+        """Strip comments (both // and #) while preserving quotes and hex colors."""
+        # 1. Handle // comments
+        if '//' in line:
+            # Only strip if not inside quotes
+            in_quote = False
+            quote_char = ''
+            cut_idx = -1
+            for i, ch in enumerate(line):
+                if ch in ('"', "'"):
+                    if not in_quote:
+                        in_quote = True
+                        quote_char = ch
+                    elif quote_char == ch:
+                        in_quote = False
+                elif ch == '/' and not in_quote and i + 1 < len(line) and line[i + 1] == '/':
+                    cut_idx = i
+                    break
+            if cut_idx != -1:
+                line = line[:cut_idx]
+
+        line = line.strip()
+        if not line:
+            return []
+
+        # 2. Tokenize using shlex to respect quotes
+        try:
+            tokens = shlex.split(line, posix=True)
+        except ValueError as e:
+            raise ValidationError(f"Unmatched quote in line: {e}")
+
+        # 3. Filter trailing comment tokens (tokens starting with # that are not hex colors)
+        filtered_tokens = []
+        for tok in tokens:
+            if tok.startswith('#') and not HEX_REGEX.match(tok):
+                # This token is a comment marker, stop tokenizing this line
+                break
+            filtered_tokens.append(tok)
+
+        return filtered_tokens
+
+    def parse_file(self, dsl_path: Union[str, Path]) -> Tuple[PixelMiraiEngine, List[Tuple[str, Optional[str]]]]:
+        path = Path(dsl_path)
+        if not path.is_file():
+            raise FileNotFoundError(f"DSL file not found: {dsl_path}")
+        with open(path, 'r', encoding='utf-8') as f:
             text = f.read()
-        return self.parse(text, name=Path(dsl_path).stem.replace('.pxm', ''))
+        name = path.stem.replace('.pxm', '').replace('.dsl', '')
+        return self.parse(text, name=name)
 
-    def parse(self, dsl_text: str, name: str = 'untitled') -> PixelMiraiEngine:
-        engine = None
-        current_frame: PixelFrame | None = None
-        current_layer: PixelLayer | None = None
-        exports: list = []
+    def parse(self, dsl_text: str, name: str = 'untitled') -> Tuple[PixelMiraiEngine, List[Tuple[str, Optional[str]]]]:
+        engine: Optional[PixelMiraiEngine] = None
+        current_frame: Optional[PixelFrame] = None
+        current_layer: Optional[PixelLayer] = None
+        exports: List[Tuple[str, Optional[str]]] = []
 
         lines = dsl_text.splitlines()
         for lineno, raw_line in enumerate(lines, 1):
-            line = raw_line.strip()
-            # Handle // comments
-            if '//' in line:
-                line = line[:line.index('//')].strip()
-            # Strip inline comments: only strip '#' that is NOT a hex color
-            if ' #' in line:
-                parts_check = line.split(' #')
-                rebuilt = parts_check[0]
-                for seg in parts_check[1:]:
-                    hex_match = re.match(r'^[0-9a-fA-F]{3}([0-9a-fA-F]{3})?\b', seg)
-                    if hex_match:
-                        rebuilt += ' #' + seg
-                    else:
-                        break
-                line = rebuilt.strip()
-            elif line.startswith('#'):
-                continue
-            if not line:
+            try:
+                tokens = self._strip_comments_and_tokenize(raw_line)
+            except ValidationError as e:
+                raise DSLSyntaxError(str(e), lineno, raw_line)
+
+            if not tokens:
                 continue
 
-            parts = line.split()
-            cmd = parts[0].lower()
+            cmd = tokens[0].lower()
 
             try:
-                # ── Header commands (before frame blocks) ──
+                # ── Canvas / Size ──
                 if cmd in ('canvas', 'size'):
-                    w = int(parts[1])
-                    h = int(parts[2]) if len(parts) > 2 else w
-                    engine = PixelMiraiEngine(w, h, self.verbose)
+                    if len(tokens) < 2:
+                        raise DSLSyntaxError(f"'{cmd}' expects 1 or 2 integer dimensions", lineno, raw_line)
+                    try:
+                        w = int(tokens[1])
+                        h = int(tokens[2]) if len(tokens) > 2 else w
+                    except ValueError:
+                        raise DSLSyntaxError(f"'{cmd}' dimensions must be integers", lineno, raw_line)
+
+                    engine = PixelMiraiEngine(w, h, verbose=self.verbose)
                     engine.name = name
-                    if self.verbose:
-                        print(f"Canvas: {w}x{h}")
+                    current_frame = None
+                    current_layer = None
 
                 elif cmd == 'palette':
                     if engine is None:
-                        raise ValueError("'canvas' must come before 'palette'")
-                    pal_name = parts[1].lower().replace('-', '')
-                    engine.set_palette(pal_name)
+                        raise DSLSyntaxError("'palette' declaration requires 'canvas' first", lineno, raw_line)
+                    if len(tokens) < 2:
+                        raise DSLSyntaxError("'palette' expects preset name or color list", lineno, raw_line)
+                    engine.set_palette(tokens[1])
 
                 elif cmd == 'background':
                     if engine is None:
-                        raise ValueError("'canvas' must come before 'background'")
-                    val = parts[1].lower()
-                    if val == 'transparent':
-                        engine.set_background('#000000')
-                        engine._bg_transparent = True
-                    else:
-                        engine.set_background(parts[1])
+                        raise DSLSyntaxError("'background' declaration requires 'canvas' first", lineno, raw_line)
+                    if len(tokens) < 2:
+                        raise DSLSyntaxError("'background' expects hex color or 'transparent'", lineno, raw_line)
+                    engine.set_background(tokens[1])
 
                 elif cmd == 'scale':
                     if engine is None:
-                        raise ValueError("'canvas' must come before 'scale'")
-                    engine.scale = int(parts[1])
+                        raise DSLSyntaxError("'scale' declaration requires 'canvas' first", lineno, raw_line)
+                    if len(tokens) < 2:
+                        raise DSLSyntaxError("'scale' expects an integer value", lineno, raw_line)
+                    engine.set_scale(int(tokens[1]))
 
                 elif cmd == 'crt':
                     if engine is None:
-                        raise ValueError("'canvas' must come before 'crt'")
-                    engine.crt = (parts[1].lower() == 'on')
+                        raise DSLSyntaxError("'crt' declaration requires 'canvas' first", lineno, raw_line)
+                    if len(tokens) < 2 or tokens[1].lower() not in ('on', 'off'):
+                        raise DSLSyntaxError("'crt' expects 'on' or 'off'", lineno, raw_line)
+                    engine.crt = (tokens[1].lower() == 'on')
 
                 elif cmd == 'fps':
                     if engine is None:
-                        raise ValueError("'canvas' must come before 'fps'")
-                    engine.fps = int(parts[1])
+                        raise DSLSyntaxError("'fps' declaration requires 'canvas' first", lineno, raw_line)
+                    if len(tokens) < 2:
+                        raise DSLSyntaxError("'fps' expects an integer value", lineno, raw_line)
+                    engine.set_fps(int(tokens[1]))
 
-                # ── Frame block ──
+                # ── Frame Block ──
                 elif cmd == 'frame':
                     if engine is None:
-                        raise ValueError("'canvas' must come before 'frame'")
-                    idx = int(parts[1])
-                    current_frame = engine.get_or_create_frame(idx)
+                        raise DSLSyntaxError("'frame' declaration requires 'canvas' first", lineno, raw_line)
+                    if len(tokens) < 2:
+                        raise DSLSyntaxError("'frame' expects integer frame index", lineno, raw_line)
+                    frame_idx = int(tokens[1])
+                    current_frame = engine.get_or_create_frame(frame_idx)
                     current_layer = None
 
-                # ── Layer block ──
+                # ── Layer Block ──
                 elif cmd == 'layer':
                     if engine is None:
-                        raise ValueError("'canvas' must come before 'layer'")
+                        raise DSLSyntaxError("'layer' declaration requires 'canvas' first", lineno, raw_line)
                     if current_frame is None:
                         current_frame = engine.get_or_create_frame(0)
-                    # Layer name may be quoted
-                    layer_name = parts[1].strip('"\'')
+                    if len(tokens) < 2:
+                        raise DSLSyntaxError("'layer' expects layer name", lineno, raw_line)
+                    layer_name = tokens[1]
                     current_layer = current_frame.get_or_create_layer(layer_name)
 
-                # ── Draw commands ──
+                # ── Drawing Commands ──
                 elif cmd == 'pixel':
+                    if engine is None:
+                        raise DSLSyntaxError("'pixel' command requires 'canvas' first", lineno, raw_line)
+                    if len(tokens) < 4:
+                        raise DSLSyntaxError("'pixel' expects x y color", lineno, raw_line)
+                    if current_frame is None:
+                        current_frame = engine.get_or_create_frame(0)
                     if current_layer is None:
-                        if current_frame is None:
-                            current_frame = engine.get_or_create_frame(0)
                         current_layer = current_frame.get_or_create_layer('default')
-                    current_layer.pixel(int(parts[1]), int(parts[2]), parts[3])
+                    x, y = int(tokens[1]), int(tokens[2])
+                    current_layer.pixel(x, y, tokens[3])
 
                 elif cmd == 'pixels':
+                    if engine is None:
+                        raise DSLSyntaxError("'pixels' command requires 'canvas' first", lineno, raw_line)
+                    if len(tokens) < 3:
+                        raise DSLSyntaxError("'pixels' expects color followed by coordinate pairs", lineno, raw_line)
+                    if current_frame is None:
+                        current_frame = engine.get_or_create_frame(0)
                     if current_layer is None:
-                        if current_frame is None:
-                            current_frame = engine.get_or_create_frame(0)
                         current_layer = current_frame.get_or_create_layer('default')
-                    color = parts[1]
-                    for coord in parts[2:]:
-                        if ',' in coord:
-                            px_str, py_str = coord.split(',')
-                            current_layer.pixel(int(px_str), int(py_str), color)
+                    color = tokens[1]
+                    for coord_pair in tokens[2:]:
+                        if ',' not in coord_pair:
+                            raise DSLSyntaxError(f"Coordinate pair must be 'x,y' (got '{coord_pair}')", lineno, raw_line)
+                        px_str, py_str = coord_pair.split(',', 1)
+                        current_layer.pixel(int(px_str), int(py_str), color)
 
                 elif cmd == 'rect':
+                    if engine is None:
+                        raise DSLSyntaxError("'rect' command requires 'canvas' first", lineno, raw_line)
+                    if len(tokens) < 6:
+                        raise DSLSyntaxError("'rect' expects x y width height color", lineno, raw_line)
+                    if current_frame is None:
+                        current_frame = engine.get_or_create_frame(0)
                     if current_layer is None:
-                        if current_frame is None:
-                            current_frame = engine.get_or_create_frame(0)
                         current_layer = current_frame.get_or_create_layer('default')
-                    current_layer.rect(
-                        int(parts[1]), int(parts[2]),
-                        int(parts[3]), int(parts[4]),
-                        parts[5]
-                    )
+                    x, y, w, h = int(tokens[1]), int(tokens[2]), int(tokens[3]), int(tokens[4])
+                    current_layer.rect(x, y, w, h, tokens[5])
 
                 elif cmd == 'hline':
+                    if engine is None:
+                        raise DSLSyntaxError("'hline' command requires 'canvas' first", lineno, raw_line)
+                    if len(tokens) < 5:
+                        raise DSLSyntaxError("'hline' expects y x1 x2 color", lineno, raw_line)
+                    if current_frame is None:
+                        current_frame = engine.get_or_create_frame(0)
                     if current_layer is None:
-                        if current_frame is None:
-                            current_frame = engine.get_or_create_frame(0)
                         current_layer = current_frame.get_or_create_layer('default')
-                    current_layer.hline(
-                        int(parts[1]), int(parts[2]), int(parts[3]), parts[4]
-                    )
+                    y, x1, x2 = int(tokens[1]), int(tokens[2]), int(tokens[3])
+                    current_layer.hline(y, x1, x2, tokens[4])
 
                 elif cmd == 'vline':
+                    if engine is None:
+                        raise DSLSyntaxError("'vline' command requires 'canvas' first", lineno, raw_line)
+                    if len(tokens) < 5:
+                        raise DSLSyntaxError("'vline' expects x y1 y2 color", lineno, raw_line)
+                    if current_frame is None:
+                        current_frame = engine.get_or_create_frame(0)
                     if current_layer is None:
-                        if current_frame is None:
-                            current_frame = engine.get_or_create_frame(0)
                         current_layer = current_frame.get_or_create_layer('default')
-                    current_layer.vline(
-                        int(parts[1]), int(parts[2]), int(parts[3]), parts[4]
-                    )
+                    x, y1, y2 = int(tokens[1]), int(tokens[2]), int(tokens[3])
+                    current_layer.vline(x, y1, y2, tokens[4])
 
                 elif cmd == 'circle':
+                    if engine is None:
+                        raise DSLSyntaxError("'circle' command requires 'canvas' first", lineno, raw_line)
+                    if len(tokens) < 5:
+                        raise DSLSyntaxError("'circle' expects cx cy radius color", lineno, raw_line)
+                    if current_frame is None:
+                        current_frame = engine.get_or_create_frame(0)
                     if current_layer is None:
-                        if current_frame is None:
-                            current_frame = engine.get_or_create_frame(0)
                         current_layer = current_frame.get_or_create_layer('default')
-                    current_layer.circle(
-                        int(parts[1]), int(parts[2]), int(parts[3]), parts[4]
-                    )
+                    cx, cy, r = int(tokens[1]), int(tokens[2]), int(tokens[3])
+                    current_layer.circle(cx, cy, r, tokens[4])
 
                 elif cmd == 'fillcircle':
+                    if engine is None:
+                        raise DSLSyntaxError("'fillcircle' command requires 'canvas' first", lineno, raw_line)
+                    if len(tokens) < 5:
+                        raise DSLSyntaxError("'fillcircle' expects cx cy radius color", lineno, raw_line)
+                    if current_frame is None:
+                        current_frame = engine.get_or_create_frame(0)
                     if current_layer is None:
-                        if current_frame is None:
-                            current_frame = engine.get_or_create_frame(0)
                         current_layer = current_frame.get_or_create_layer('default')
-                    current_layer.fillcircle(
-                        int(parts[1]), int(parts[2]), int(parts[3]), parts[4]
-                    )
+                    cx, cy, r = int(tokens[1]), int(tokens[2]), int(tokens[3])
+                    current_layer.fillcircle(cx, cy, r, tokens[4])
 
-                # ── Export commands ──
+                # ── Export Directives ──
                 elif cmd == 'export':
-                    fmt = parts[1].lower()
-                    fname = parts[2].strip('"\'') if len(parts) > 2 else None
-                    exports.append((fmt, fname))
+                    if len(tokens) < 2:
+                        raise DSLSyntaxError("'export' expects format (png, gif, crt, pxm)", lineno, raw_line)
+                    fmt = tokens[1].lower()
+                    if fmt not in ('png', 'gif', 'crt', 'pxm'):
+                        raise DSLSyntaxError(f"Unsupported export format '{fmt}' (expected png, gif, crt, pxm)", lineno, raw_line)
+                    custom_filename = tokens[2] if len(tokens) > 2 else None
+                    exports.append((fmt, custom_filename))
 
                 else:
-                    if self.verbose:
-                        print(f"  [line {lineno}] Unknown command: {cmd!r} (skipped)")
+                    msg = f"Unknown DSL command '{cmd}'"
+                    if self.strict:
+                        raise DSLSyntaxError(msg, lineno, raw_line)
+                    else:
+                        safe_print(f"  [WARN] Line {lineno}: {msg} (skipped)")
 
-            except (IndexError, ValueError) as e:
-                safe_print(f"  [WARN] DSL parse error at line {lineno}: {raw_line!r}")
-                safe_print(f"   -> {e}")
-                continue
+            except (IndexError, ValueError) as err:
+                msg = f"Invalid argument: {err}"
+                if self.strict:
+                    raise DSLSyntaxError(msg, lineno, raw_line)
+                else:
+                    safe_print(f"  [WARN] Line {lineno}: {msg} -> '{raw_line}'")
+            except ValidationError as err:
+                if self.strict:
+                    raise DSLSyntaxError(str(err), lineno, raw_line)
+                else:
+                    safe_print(f"  [WARN] Line {lineno}: {err}")
 
         if engine is None:
-            raise ValueError("DSL must start with a 'canvas W H' command")
+            raise DSLSyntaxError("Script must declare canvas dimensions (e.g. 'canvas 32 32')", 1)
 
         return engine, exports
 
@@ -615,104 +905,128 @@ class DSLParser:
 # CLI ENTRY POINT
 # ═══════════════════════════════════════════════════════════════
 
-def main():
+def find_repo_root(start_path: Path) -> Path:
+    """Find repository root by walking upwards looking for marker files."""
+    current = start_path.resolve()
+    for _ in range(8):
+        if (current / '.git').exists() or (current / 'requirements.txt').exists() or (current / 'SKILL.md').exists():
+            return current
+        if current.parent == current:
+            break
+        current = current.parent
+    return start_path.parent
+
+
+def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description='PixelMirai Compiler — DSL → PNG + GIF + CRT + .pxm',
+        prog='pixelmirai_compiler',
+        description='PixelMirai Compiler — Deterministic DSL to PNG/GIF/CRT/PXM',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
     )
     parser.add_argument('script', help='Path to .pxm.dsl script file')
     parser.add_argument('--out', default=None, help='Output directory')
     parser.add_argument('--only', default=None, choices=['png', 'gif', 'crt', 'pxm'],
-                        help='Only export this format')
-    parser.add_argument('--verbose', action='store_true', help='Debug pixel output')
-    parser.add_argument('--name', default=None, help='Override output filename')
-    parser.add_argument('--scale', type=int, default=None, help='Scale factor (1-16)')
-    parser.add_argument('--crt', action='store_true', help='Force CRT on')
+                        help='Only export specified format')
+    parser.add_argument('--name', default=None, help='Override output base filename')
+    parser.add_argument('--scale', type=int, default=None, help=f'Scale factor ({MIN_SCALE}-{MAX_SCALE})')
+    parser.add_argument('--crt', action='store_true', help='Force CRT scanline filter on')
     parser.add_argument('--no-crt', action='store_true', dest='no_crt', help='Force CRT off')
-    parser.add_argument('--fps', type=int, default=None, help='GIF frame rate')
+    parser.add_argument('--fps', type=int, default=None, help=f'GIF frame rate ({MIN_FPS}-{MAX_FPS})')
+    parser.add_argument('--lenient', action='store_true', help='Skip invalid lines instead of failing')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
+    parser.add_argument('--version', action='version', version=f'%(prog)s {VERSION}')
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    # Parse DSL
-    dsl_parser = DSLParser(verbose=args.verbose)
+    script_path = Path(args.script)
+    if not script_path.is_file():
+        safe_print(f"[ERR] File not found: {args.script}")
+        return 1
+
+    dsl_parser = DSLParser(verbose=args.verbose, strict=(not args.lenient))
     try:
-        engine, exports = dsl_parser.parse_file(args.script)
-    except FileNotFoundError:
-        safe_print(f"[ERR] Script not found: {args.script}")
-        sys.exit(1)
-    except ValueError as e:
+        engine, exports = dsl_parser.parse_file(script_path)
+    except PixelMiraiError as e:
         safe_print(f"[ERR] DSL Error: {e}")
-        sys.exit(1)
+        return 1
+    except Exception as e:
+        safe_print(f"[ERR] Unexpected error while parsing: {e}")
+        return 1
 
-    # Apply CLI overrides
-    if args.scale:
-        engine.scale = args.scale
-    if args.fps:
-        engine.fps = args.fps
-    if args.crt:
-        engine.crt = True
-    if args.no_crt:
-        engine.crt = False
+    # Apply command-line overrides
+    try:
+        if args.scale is not None:
+            engine.set_scale(args.scale)
+        if args.fps is not None:
+            engine.set_fps(args.fps)
+        if args.crt:
+            engine.crt = True
+        if args.no_crt:
+            engine.crt = False
+    except ValidationError as e:
+        safe_print(f"[ERR] Validation Error: {e}")
+        return 1
 
     # Determine output directory
-    script_path = Path(args.script).resolve()
     if args.out:
         out_dir = Path(args.out)
     else:
-        # Walk up from script to find package.json / next.config.mjs (project root)
-        # then use public/exports inside it
-        search = script_path.parent
-        project_root = None
-        for _ in range(6):
-            if (search / 'package.json').exists() or (search / 'next.config.mjs').exists():
-                project_root = search
-                break
-            search = search.parent
-        if project_root:
-            out_dir = project_root / 'public' / 'exports'
-        else:
-            # Fallback: same dir as script
-            out_dir = script_path.parent / 'exports'
-    ensure_dir(str(out_dir))
+        repo_root = find_repo_root(script_path.parent)
+        out_dir = repo_root / 'exports'
+    ensure_dir(out_dir)
 
-    # Determine base name
     base_name = args.name or engine.name
 
-    print(f"\n[PixelMirai Compiler]")
-    print(f"   Script  : {args.script}")
-    print(f"   Canvas  : {engine.width}x{engine.height}")
-    print(f"   Frames  : {len(engine.frames)}")
-    print(f"   Scale   : {engine.scale}x  ->  {engine.width*engine.scale}x{engine.height*engine.scale}px")
-    print(f"   CRT     : {'on' if engine.crt else 'off'}")
-    print(f"   FPS     : {engine.fps}")
-    print(f"   Out dir : {out_dir}")
-    print()
+    safe_print(f"\n[PixelMirai Compiler v{VERSION}]")
+    safe_print(f"   Script  : {script_path.name}")
+    safe_print(f"   Canvas  : {engine.width}x{engine.height}")
+    safe_print(f"   Frames  : {len(engine.frames)}")
+    safe_print(f"   Scale   : {engine.scale}x -> {engine.width * engine.scale}x{engine.height * engine.scale}px")
+    safe_print(f"   Alpha   : {'transparent' if engine.is_transparent else 'opaque'}")
+    safe_print(f"   CRT     : {'on' if engine.crt else 'off'}")
+    safe_print(f"   FPS     : {engine.fps}")
+    safe_print(f"   Out dir : {out_dir}\n")
 
-    # Determine which formats to export
+    # Determine export list
+    export_targets: List[Tuple[str, str]] = []
     if args.only:
-        formats = [args.only]
+        export_targets.append((args.only, f"{base_name}.{args.only if args.only != 'crt' else 'png'}"))
     elif exports:
-        formats = [fmt for fmt, _ in exports]
+        for fmt, custom_fn in exports:
+            fn = custom_fn if (custom_fn and not args.name) else f"{base_name}.{fmt}"
+            if fmt == 'crt' and not fn.endswith('.png'):
+                fn = f"{base_name}-crt.png"
+            export_targets.append((fmt, fn))
     else:
-        formats = ['png', 'gif', 'crt', 'pxm']
+        export_targets = [
+            ('png', f"{base_name}.png"),
+            ('gif', f"{base_name}.gif"),
+            ('crt', f"{base_name}-crt.png"),
+            ('pxm', f"{base_name}.pxm"),
+        ]
 
-    if engine.crt and 'crt' not in formats:
-        formats.append('crt')
+    if engine.crt and not any(fmt == 'crt' for fmt, _ in export_targets):
+        export_targets.append(('crt', f"{base_name}-crt.png"))
 
-    # Do exports
-    for fmt in formats:
-        if fmt == 'png':
-            engine.export_png(str(out_dir / f'{base_name}.png'))
-        elif fmt == 'gif':
-            engine.export_gif(str(out_dir / f'{base_name}.gif'))
-        elif fmt == 'crt':
-            engine.export_crt(str(out_dir / f'{base_name}-crt.png'))
-        elif fmt == 'pxm':
-            engine.export_pxm(str(out_dir / f'{base_name}.pxm'))
+    # Execute exports
+    for fmt, filename in export_targets:
+        target_path = out_dir / filename
+        try:
+            if fmt == 'png':
+                engine.export_png(target_path)
+            elif fmt == 'gif':
+                engine.export_gif(target_path)
+            elif fmt == 'crt':
+                engine.export_crt(target_path)
+            elif fmt == 'pxm':
+                engine.export_pxm(target_path)
+        except Exception as e:
+            safe_print(f"[ERR] Failed exporting {fmt} to {target_path}: {e}")
+            return 1
 
-    print(f"\n[Done] Files saved to: {out_dir}")
+    safe_print(f"\n[Done] Compilation successful! Files saved to: {out_dir}")
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

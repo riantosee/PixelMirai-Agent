@@ -6,6 +6,7 @@
 *Pixel art will never fade with time. | ドット絵は時代に色褪せない。*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/riantosee/PixelMirai-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/riantosee/PixelMirai-Agent/actions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![No AI Slop](https://img.shields.io/badge/AI%20Slop-0%25%20Pure%20Grid-success)](https://github.com/riantosee/PixelMirai-Agent)
 [![Custom Format](https://img.shields.io/badge/Format-.pxm%20(FNV--1a)-ff007f)](docs/pxm-format-spec.md)
@@ -121,14 +122,16 @@ In an era dominated by generative diffusion models producing blurry "AI Slop"—
 - 📜 **PixelMirai DSL**: Clean declarative scripting language (`pixel`, `rect`, `hline`, `vline`, `circle`, `fillcircle`, `pixels`).
 - 🎬 **Multi-Frame Animation**: Built-in timeline engine that compiles frame sequences into loopable GIFs.
 - 📺 **CRT Retro Filter**: Authentic scanline darkening and radial vignette recreating classic 1980s arcade monitors.
-- 📦 **`.pxm` Project Standard**: Verifiable JSON container holding layers, frames, palettes, and checksum.
+- 💎 **True Alpha Transparency**: Declaring `background transparent` generates authentic 32-bit RGBA PNGs and transparent animated GIFs.
+- 📦 **`.pxm` Project Standard & Round-Trip**: Verifiable JSON container holding layers, frames, palettes, and FNV-1a checksum. Supports both exporting and loading via `load_pxm()`.
+- 🛡️ **Strict Syntax & Resource Bounds**: Catches malformed DSL, unknown commands, out-of-bounds coordinates, and invalid hex with line-accurate error reporting.
 - 🤖 **Universal AI Agent Skill**: Provided with standard `SKILL.md` frontmatter for seamless LLM integration.
 
 ---
 
 ### 🚀 Quick Start Guide
 
-#### 1. Installation
+#### 1. Installation & Environment Setup
 Requires Python 3.10+ and Pillow:
 ```bash
 git clone https://github.com/riantosee/PixelMirai-Agent.git
@@ -136,10 +139,15 @@ cd PixelMirai-Agent
 pip install -r requirements.txt
 ```
 
+To install development & testing dependencies:
+```bash
+pip install -r requirements-dev.txt
+```
+
 #### 2. Compiling DSL via CLI
 Convert any `.pxm.dsl` file into PNG, GIF, CRT renders, and `.pxm` containers:
 ```bash
-# Compile 8-bit knight sprite
+# Compile 8-bit knight sprite (default: strict validation)
 python scripts/pixelmirai_compiler.py examples/knight-32.pxm.dsl
 
 # Compile 64x64 cat with CRT filter and 8x upscale
@@ -147,6 +155,9 @@ python scripts/pixelmirai_compiler.py examples/cat-64.pxm.dsl --crt --scale 8
 
 # Output only animated GIF
 python scripts/pixelmirai_compiler.py examples/coin-16.pxm.dsl --only gif
+
+# Lenient mode (skips invalid lines without terminating)
+python scripts/pixelmirai_compiler.py my_sprite.pxm.dsl --lenient
 ```
 
 #### 3. Python API Usage
@@ -154,17 +165,30 @@ You can also use the compiler programmatically inside Python applications:
 ```python
 from scripts.pixelmirai_compiler import PixelMiraiEngine
 
+# Initialize 32x32 canvas
 engine = PixelMiraiEngine(width=32, height=32)
 engine.set_palette('pico8')
-engine.set_background('#1d2b53')
+engine.set_background('transparent')  # True RGBA transparency
 
+# Draw on frame 0
 frame = engine.new_frame(0)
 layer = frame.new_layer('character')
 layer.rect(10, 10, 12, 12, '#ffa300')
 layer.pixel(14, 14, '#00e436')
 
+# Export formats
 engine.export_png('output.png', scale=12)
 engine.export_pxm('output.pxm')
+
+# Load and verify existing .pxm project file
+loaded = PixelMiraiEngine.load_pxm('output.pxm', verify_checksum=True)
+print(f"Loaded {loaded.name} with {len(loaded.frames)} frame(s)!")
+```
+
+#### 4. Running Automated Tests
+Run the comprehensive 26-test suite covering parser, validation, transparency, exports, and CLI behavior:
+```bash
+pytest tests/ -v
 ```
 
 ---
