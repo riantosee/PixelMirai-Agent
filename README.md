@@ -7,9 +7,9 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![No AI Slop](https://img.shields.io/badge/AI%20Slop-0%25%20Pure%20Grid-success)](https://github.com/RianFix/PixelMirai-Agent)
+[![No AI Slop](https://img.shields.io/badge/AI%20Slop-0%25%20Pure%20Grid-success)](https://github.com/riantosee/PixelMirai-Agent)
 [![Custom Format](https://img.shields.io/badge/Format-.pxm%20(FNV--1a)-ff007f)](docs/pxm-format-spec.md)
-[![Creator](https://img.shields.io/badge/Creator-RianFix-8a2be2)](https://github.com/RianFix)
+[![Creator](https://img.shields.io/badge/Creator-Rian-8a2be2)](https://github.com/riantosee)
 
 <br/>
 
@@ -62,7 +62,7 @@ Dalam era di mana model difusi generatif sering menghasilkan "AI Slop" (pixel ka
 #### 1. Prasyarat & Instalasi
 Membutuhkan Python 3.10 atau lebih baru dan library Pillow:
 ```bash
-git clone https://github.com/RianFix/PixelMirai-Agent.git
+git clone https://github.com/riantosee/PixelMirai-Agent.git
 cd PixelMirai-Agent
 pip install -r requirements.txt
 ```
@@ -131,7 +131,7 @@ In an era dominated by generative diffusion models producing blurry "AI Slop"—
 #### 1. Installation
 Requires Python 3.10+ and Pillow:
 ```bash
-git clone https://github.com/RianFix/PixelMirai-Agent.git
+git clone https://github.com/riantosee/PixelMirai-Agent.git
 cd PixelMirai-Agent
 pip install -r requirements.txt
 ```
@@ -194,7 +194,7 @@ engine.export_pxm('output.pxm')
 #### 1. インストール
 Python 3.10以上とPillowが必要です：
 ```bash
-git clone https://github.com/RianFix/PixelMirai-Agent.git
+git clone https://github.com/riantosee/PixelMirai-Agent.git
 cd PixelMirai-Agent
 pip install -r requirements.txt
 ```
@@ -252,8 +252,8 @@ PixelMirai-Agent/
 
 ## 👨‍💻 Creator & Socials
 
-Created with passion by **Rian (@RianFix)**  
-- 🐙 **GitHub**: [@RianFix](https://github.com/RianFix)
+Created with passion by **Rian (@riantosee / @RianFix)**  
+- 🐙 **GitHub**: [@riantosee](https://github.com/riantosee) & [@RianFix](https://github.com/RianFix)
 - 📸 **Instagram**: [@bisarianbisaryan](https://www.instagram.com/bisarianbisaryan/)
 
 *"Pixel art tak akan luntur oleh zaman. Abadi di setiap era, murni di setiap grid."*
