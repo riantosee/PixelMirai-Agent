@@ -1,88 +1,78 @@
 <div align="center">👾 PixelMirai Agent
 
-A Deterministic Pixel Art Engine & AI Agent Skill
+Deterministic Pixel Art Engine & AI Agent Skill
 
-Create pixel art with precision. Animate with code. Build with consistency.
+"Pixel art never fades with time."
 
-Pixel art never fades with time.
+""License: MIT" (https://img.shields.io/badge/License-MIT-yellow.svg)" (https://opensource.org/licenses/MIT)
+""CI" (https://github.com/riantosee/PixelMirai-Agent/actions/workflows/ci.yml/badge.svg)" (https://github.com/riantosee/PixelMirai-Agent/actions)
+""Python 3.10+" (https://img.shields.io/badge/python-3.10+-blue.svg)" (https://www.python.org/downloads/)
+""No AI Slop" (https://img.shields.io/badge/AI%20Slop-0%25%20Pure%20Grid-success)" (https://github.com/riantosee/PixelMirai-Agent)
+""Custom Format" (https://img.shields.io/badge/Format-.pxm%20(FNV--1a)-ff007f)" (docs/pxm-format-spec.md)
+""Creator" (https://img.shields.io/badge/Creator-Rian-8a2be2)" (https://github.com/riantosee)
 
-<br>""License: MIT" (https://img.shields.io/badge/License-MIT-yellow.svg)" (LICENSE)
-""Python 3.10+" (https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?logo=python&logoColor=white)" (https://www.python.org/downloads/)
-""Pillow" (https://img.shields.io/badge/Powered%20by-Pillow-8CAAE6.svg)" (https://python-pillow.org/)
-""GitHub Stars" (https://img.shields.io/github/stars/riantosee/PixelMirai-Agent?style=flat&logo=github)" (https://github.com/riantosee/PixelMirai-Agent/stargazers)
-""Issues" (https://img.shields.io/github/issues/riantosee/PixelMirai-Agent)" (https://github.com/riantosee/PixelMirai-Agent/issues)
-
-"Explore the Gallery" (#-pixel-art-gallery) · "Quick Start" (#-quick-start) · "Documentation" (#-documentation) · "Contributing" (#-contributing)
-
-</div>---
-
-🎨 Pixel Art Gallery
-
-PixelMirai is built around a simple idea: every pixel should be intentional.
-
-Sprites and animations can be described through a compact domain-specific language (DSL) and rendered by a Python-based engine. The goal is predictable, reproducible pixel art without relying on generative image output.
-
-<div align="center">🐱 Royal Calico Cat · 64×64| 📺 CRT Retro Edition
-<img src="assets/cat-64.gif" width="280" alt="Animated 64 by 64 royal calico cat sprite">| <img src="assets/cat-64-crt.png" width="280" alt="Royal calico cat with a retro CRT effect">
-Idle animation, blinking, and tail movement| Retro scanlines and vignette effect
-
-⚔️ 8-Bit Knight · 32×32| 🐱 Classic Cat · 32×32| 🪙 Gold Coin · 16×16
-<img src="assets/knight-32.gif" width="180" alt="Animated 8-bit knight walking">| <img src="assets/cat-32.gif" width="180" alt="Classic animated pixel cat">| <img src="assets/coin-16.gif" width="180" alt="Animated spinning gold coin">
-Walking animation| Idle and blink animation| Spinning coin animation
+<br/>" 🇬🇧 English " (#-english)  | 
+" 🇮🇩 Bahasa Indonesia " (#-bahasa-indonesia)  | 
+" 🇯🇵 日本語 " (#-日本語)
 
 </div>---
 
-✨ Why PixelMirai?
+🎨 Gallery & Live Renders (Zero AI Slop)
 
-PixelMirai explores a code-first approach to pixel art, where sprites are defined using explicit drawing commands and discrete coordinates.
+Every sprite showcased below is rendered using the PixelMirai Engine through explicit code and integer-based drawing operations on a discrete pixel grid.
 
-- 🎯 Deterministic Rendering — Generate artwork from explicit instructions instead of relying on random image generation.
-- 📐 Integer-Based Pixel Grids — Design around discrete pixel coordinates for crisp, consistent sprite construction.
-- 🎨 Retro Color Palettes — Work with palettes inspired by classic gaming aesthetics, including PICO-8, Endesga32, Game Boy, and CGA.
-- 🎬 Frame-Based Animation — Define multiple frames and compile supported animations into GIF files.
-- 📺 CRT Effects — Add a retro monitor look with optional scanlines and vignette effects.
-- 📜 PixelMirai DSL — Describe sprites with readable commands instead of manually editing every pixel.
-- 🤖 AI Agent Integration — Use the included "SKILL.md" instructions to help compatible coding agents work with the engine.
-- 📦 PixelMirai Project Format — Work with the custom ".pxm" project format and its documented serialization and integrity mechanisms.
+🐱 Royal Calico Cat (64×64)| 📺 64×64 CRT Retro Edition
+<img src="assets/cat-64.gif" width="256" alt="Royal Calico Cat 64x64 GIF" />| <img src="assets/cat-64-crt.png" width="256" alt="Royal Calico Cat CRT Scanline" />
+2-frame idle animation with blinking and tail movement| CRT phosphor scanlines and radial vignette
 
-PixelMirai is designed for developers, indie game creators, pixel artists, and AI-agent builders who value reproducible asset generation.
+⚔️ 8-Bit Knight (32×32)| 🐱 Classic Cat (32×32)| 🪙 Gold Coin (16×16)
+<img src="assets/knight-32.gif" width="200" alt="Knight 32x32 Walk Cycle" />| <img src="assets/cat-32.gif" width="200" alt="Classic Cat 32x32" />| <img src="assets/coin-16.gif" width="200" alt="Spinning Coin 16x16" />
+4-frame walking animation| 2-frame idle and eye-blink animation| 4-frame spinning animation
 
-🚀 Quick Start
+---
 
-1. Requirements
+🇬🇧 English
 
-- Python 3.10 or newer
-- Git
-- Pillow and the dependencies listed in "requirements.txt"
+🌟 Philosophy: Pure Grid, Zero AI Slop
 
-2. Install
+Generative image models can produce pixel-art-style images with blurry edges, inconsistent pixel sizes, unwanted anti-aliasing, and colors that do not follow a coherent retro palette.
+
+PixelMirai Engine takes a code-first approach to pixel art: define drawing operations explicitly and render them through a predictable pixel-grid workflow.
+
+1. 100% Integer Grid — Work with discrete "(x, y)" coordinates to maintain crisp pixel placement.
+2. Curated Retro Palettes — Use palettes inspired by classic gaming systems, including PICO-8, Endesga32, Game Boy, and CGA.
+3. Custom ".pxm" Format — Use a JSON-based project format with a documented FNV-1a 32-bit checksum mechanism.
+4. AI Agent Ready — Provide compatible coding agents with project instructions through "SKILL.md" to help create structured pixel-art assets.
+
+✨ Core Features
+
+- 📜 PixelMirai DSL — A declarative scripting language with drawing commands such as "pixel", "rect", "hline", "vline", "circle", and "fillcircle".
+- 🎬 Multi-Frame Animation — Define frame-by-frame sprite animations and export supported sequences as animated GIFs.
+- 📺 CRT Retro Filter — Apply optional horizontal scanlines and vignette effects inspired by classic arcade monitors.
+- 🎨 Retro Palette Support — Work with curated color palettes for consistent pixel-art aesthetics.
+- 📦 ".pxm" Project Format — Store project data in a custom JSON-based format with an FNV-1a checksum for integrity verification.
+- 🛠️ Python CLI Compiler — Compile DSL scripts into supported image and project formats from the command line.
+- 🤖 AI Agent Skill ("SKILL.md") — Give compatible coding agents a structured guide for working with PixelMirai.
+
+---
+
+🚀 Quick Start Guide
+
+1. Requirements & Installation
+
+Requires Python 3.10 or newer and Pillow.
 
 git clone https://github.com/riantosee/PixelMirai-Agent.git
 cd PixelMirai-Agent
-
-python -m venv .venv
-
-Activate the virtual environment:
-
-Windows
-
-.venv\Scripts\activate
-
-Linux / macOS
-
-source .venv/bin/activate
-
-Install the dependencies:
-
 python -m pip install -r requirements.txt
 
-3. Compile Your First Sprite
+2. Compile a Sprite Using the CLI
 
-Compile the included knight example:
+Compile the 32×32 knight example:
 
 python scripts/pixelmirai_compiler.py examples/knight-32.pxm.dsl
 
-Render the cat with a CRT effect and increased output scale:
+Render the 64×64 cat with a CRT effect and 8× scaling:
 
 python scripts/pixelmirai_compiler.py examples/cat-64.pxm.dsl --crt --scale 8
 
@@ -90,19 +80,13 @@ Export only the animated GIF:
 
 python scripts/pixelmirai_compiler.py examples/coin-16.pxm.dsl --only gif
 
-Check the compiler's available options with:
+Check the available compiler options:
 
 python scripts/pixelmirai_compiler.py --help
 
-«Output formats and command-line options depend on the current compiler implementation. Use "--help" to confirm the options supported by your version.»
+3. PixelMirai DSL Example
 
----
-
-🧩 Meet the PixelMirai DSL
-
-PixelMirai DSL is a small, declarative language for describing pixel art. A script can define a canvas, palette, background, frames, layers, and drawing commands.
-
-Example: Animated Coin
+Example file: "examples/coin-16.pxm.dsl"
 
 canvas 16 16
 palette pico8
@@ -125,114 +109,250 @@ export png "coin-16.png"
 export gif "coin-16.gif"
 export pxm "coin-16.pxm"
 
-Save the script as "coin-16.pxm.dsl", then compile it using the CLI.
+This example demonstrates canvas configuration, palette selection, background settings, frame definitions, layers, drawing commands, and export directives.
 
-Explore the ""examples/"" (examples/) directory for more sample scripts.
+Explore the ""examples/"" (examples/) directory for more scripts.
+
+4. Python API
+
+The compiler may also be used programmatically. The following illustrates the intended usage pattern; confirm the exact methods against the current implementation before relying on it.
+
+from scripts.pixelmirai_compiler import PixelMiraiEngine
+
+engine = PixelMiraiEngine(width=32, height=32)
+engine.set_palette("pico8")
+engine.set_background("transparent")
+
+frame = engine.new_frame(0)
+layer = frame.new_layer("character")
+
+layer.rect(10, 10, 12, 12, "#ffa300")
+layer.pixel(14, 14, "#00e436")
+
+engine.export_png("output.png", scale=12)
+engine.export_pxm("output.pxm")
+
+5. Testing
+
+If the repository contains the test suite and development requirements, install them and run:
+
+python -m pip install -r requirements-dev.txt
+pytest tests/ -v
+
+See the current repository files and CI workflow for the test commands supported by your checkout.
 
 ---
 
-🛠️ Use Cases
+🧠 Design Principles
 
-PixelMirai can serve as a foundation for projects such as:
+PixelMirai is built around several principles:
 
-- 2D game assets — Characters, items, icons, and simple sprite animations.
-- Procedural art — Generate repeatable artwork from code and parameters.
-- AI-assisted asset creation — Let coding agents produce structured DSL scripts that the engine can render.
-- Creative tooling — Build workflows around palettes, frames, layers, and reusable sprite definitions.
-- Learning projects — Explore raster graphics, coordinate systems, animation, and file serialization with Python.
+- Explicit over ambiguous — Sprite construction should be represented by understandable drawing instructions.
+- Consistency over randomness — The same input should produce predictable rendering results under the same engine conditions.
+- Pixel precision over artificial smoothness — Preserve the visual character of a discrete pixel grid.
+- Automation over repetitive work — Enable scripts and compatible coding agents to create and reproduce assets.
+- Open tooling over lock-in — Keep the project inspectable and extensible through Python and documented formats.
 
-🤖 AI Agent Skill
+---
 
-PixelMirai includes a "SKILL.md" entry point that describes how an AI coding agent can interact with the project.
+🗺️ Roadmap
 
-The skill can help compatible agents:
+Potential areas for continued development include:
 
-1. Understand the PixelMirai DSL and project conventions.
-2. Create or modify sprite scripts.
-3. Use the available compiler commands.
-4. Follow the project's palette and pixel-grid rules.
-5. Produce assets through a reproducible rendering workflow.
+- Improved DSL parsing and error reporting.
+- More drawing primitives and palette options.
+- Reliable alpha-transparency handling across supported exports.
+- Stronger ".pxm" validation and project-loading support.
+- Expanded automated tests and continuous integration.
+- Better documentation and compatibility with AI coding agents.
 
-Agent compatibility depends on the instructions and skill-loading mechanisms supported by each tool.
+See "GitHub Issues" (https://github.com/riantosee/PixelMirai-Agent/issues) for current bugs, suggestions, and development discussions.
+
+---
+
+🇮🇩 Bahasa Indonesia
+
+🌟 Filosofi: Murni Grid, Bebas AI Slop
+
+Di era ketika model difusi generatif sering menghasilkan gambar bergaya pixel art dengan piksel buram, ukuran piksel tidak konsisten, warna bercampur, dan tepi anti-aliasing yang mengganggu estetika retro, PixelMirai Engine hadir dengan pendekatan berbasis kode.
+
+1. 100% Integer Grid — Setiap piksel menggunakan koordinat "(x, y)" bulat untuk menjaga penempatan piksel tetap presisi.
+2. Palet Retro Terkurasi — Mendukung palet yang terinspirasi dari perangkat gaming klasik seperti PICO-8, Endesga32, Game Boy, dan CGA.
+3. Format ".pxm" — Format proyek berbasis JSON dengan mekanisme checksum FNV-1a 32-bit yang terdokumentasi.
+4. Siap untuk AI Agent — Instruksi "SKILL.md" membantu coding agent yang kompatibel bekerja dengan proyek PixelMirai.
+
+✨ Fitur Utama
+
+- 📜 PixelMirai DSL — Bahasa scripting deklaratif dengan perintah seperti "pixel", "rect", "hline", "vline", "circle", dan "fillcircle".
+- 🎬 Animasi Multi-Frame — Membuat animasi sprite berdasarkan frame dan mengekspor urutan yang didukung menjadi GIF.
+- 📺 CRT Retro Filter — Efek scanline horizontal dan vignette yang terinspirasi monitor arcade klasik.
+- 🎨 Palet Retro — Mendukung palet warna untuk estetika pixel art yang konsisten.
+- 📦 Format Proyek ".pxm" — Menyimpan data proyek dalam format JSON khusus dengan mekanisme checksum FNV-1a.
+- 🛠️ CLI Compiler Python — Mengompilasi script DSL melalui command line.
+- 🤖 AI Agent Skill ("SKILL.md") — Panduan terstruktur bagi coding agent yang kompatibel.
+
+---
+
+🚀 Panduan Memulai Cepat
+
+1. Prasyarat dan Instalasi
+
+Membutuhkan Python 3.10 atau lebih baru dan Pillow.
+
+git clone https://github.com/riantosee/PixelMirai-Agent.git
+cd PixelMirai-Agent
+python -m pip install -r requirements.txt
+
+2. Menjalankan CLI Compiler
+
+Compile sprite kesatria berukuran 32×32:
+
+python scripts/pixelmirai_compiler.py examples/knight-32.pxm.dsl
+
+Render kucing 64×64 dengan CRT filter dan skala 8×:
+
+python scripts/pixelmirai_compiler.py examples/cat-64.pxm.dsl --crt --scale 8
+
+Ekspor hanya animasi GIF:
+
+python scripts/pixelmirai_compiler.py examples/coin-16.pxm.dsl --only gif
+
+Lihat opsi compiler yang tersedia:
+
+python scripts/pixelmirai_compiler.py --help
+
+3. Contoh Sintaks DSL
+
+Contoh file "examples/coin-16.pxm.dsl":
+
+canvas 16 16
+palette pico8
+background transparent
+scale 16
+fps 10
+
+frame 0
+  layer "coin"
+    fillcircle 8 8 6 #ffec27
+    circle 8 8 6 #ab5236
+    fillcircle 8 8 4 #ffa300
+
+frame 1
+  layer "coin"
+    rect 5 2 6 12 #ffec27
+    vline 5 2 13 #ab5236
+
+export png "coin-16.png"
+export gif "coin-16.gif"
+export pxm "coin-16.pxm"
+
+Contoh tersebut menunjukkan konfigurasi canvas, pemilihan palet, latar belakang, frame, layer, perintah menggambar, dan instruksi ekspor.
+
+---
+
+🇯🇵 日本語
+
+🌟 開発理念：純粋なグリッド、AIスロップの排除
+
+生成AIによる画像には、ピクセルのぼやけ、不均一なサイズ、混ざった色、不要なアンチエイリアスなどが発生することがあります。
+
+PixelMirai Engine は、明示的なコードと離散的なピクセルグリッドを使って、再現性のあるドット絵制作を目指します。
+
+1. 整数グリッド — "(x, y)" の整数座標を使い、ピクセルの配置を明確にします。
+2. レトロパレット — PICO-8、Endesga32、Game Boy、CGA などに着想を得た配色を扱います。
+3. 独自の ".pxm" 形式 — FNV-1a 32ビットチェックサムの仕組みを文書化した JSON ベースのプロジェクト形式です。
+4. AIエージェント対応 — "SKILL.md" により、対応するコーディングエージェントがプロジェクトのルールを理解しやすくなります。
+
+✨ 主な機能
+
+- 📜 PixelMirai DSL — ピクセルアートを記述する宣言型スクリプト言語。
+- 🎬 マルチフレームアニメーション — フレームを定義し、対応する形式に出力。
+- 📺 CRTレトロフィルター — スキャンラインとビネットによるレトロな画面効果。
+- 🎨 レトロパレット — 一貫したドット絵制作のための配色サポート。
+- 📦 ".pxm" プロジェクト形式 — JSON ベースの独自形式とチェックサムの仕組み。
+- 🛠️ Python CLI コンパイラ — コマンドラインから DSL スクリプトをコンパイル。
+- 🤖 AIエージェントスキル — 対応するコーディングエージェント向けの手順書。
+
+---
+
+🚀 クイックスタート
+
+1. インストール
+
+Python 3.10 以上と Pillow が必要です。
+
+git clone https://github.com/riantosee/PixelMirai-Agent.git
+cd PixelMirai-Agent
+python -m pip install -r requirements.txt
+
+2. CLI コンパイラの使用
+
+32×32 のナイトの例をコンパイルします。
+
+python scripts/pixelmirai_compiler.py examples/knight-32.pxm.dsl
+
+CRT エフェクト付きで 64×64 のネコを出力します。
+
+python scripts/pixelmirai_compiler.py examples/cat-64.pxm.dsl --crt --scale 8
+
+アニメーション GIF のみを出力します。
+
+python scripts/pixelmirai_compiler.py examples/coin-16.pxm.dsl --only gif
+
+3. DSL の例
+
+"examples/coin-16.pxm.dsl" には、キャンバス、パレット、背景、フレーム、レイヤー、描画コマンド、出力設定の例があります。
+
+---
 
 📁 Project Structure
 
 PixelMirai-Agent/
 ├── .agents/
 │   └── skills/
-│       └── pixelmirai/       # Agent skill and supporting references
-├── assets/                   # Gallery images and rendered sprites
-├── docs/                     # DSL, palette, and format documentation
-├── examples/                  # Example PixelMirai DSL scripts
+│       └── pixelmirai/
+│           ├── SKILL.md
+│           ├── examples/
+│           └── references/
+├── assets/
+│   ├── cat-64.gif
+│   ├── cat-64-crt.png
+│   ├── cat-32.gif
+│   ├── knight-32.gif
+│   └── coin-16.gif
+├── docs/
+│   ├── dsl-specification.md
+│   ├── palette-endesga32.md
+│   └── pxm-format-spec.md
+├── examples/
+│   ├── cat-64.pxm.dsl
+│   ├── cat-32.pxm.dsl
+│   ├── knight-32.pxm.dsl
+│   └── coin-16.pxm.dsl
 ├── scripts/
-│   ├── pixelmirai_compiler.py # Core engine and CLI compiler
-│   ├── generate_cat_art.py    # Procedural sprite generator
-│   └── generate_cat_64.py     # 64×64 sprite generator
-├── SKILL.md                   # Root agent skill entry point
-├── requirements.txt           # Runtime dependencies
-├── LICENSE                    # MIT License
-└── README.md                  # Project overview
+│   ├── pixelmirai_compiler.py
+│   ├── generate_cat_art.py
+│   └── generate_cat_64.py
+├── SKILL.md
+├── requirements.txt
+├── LICENSE
+└── README.md
 
-Some files and optional development tools may vary between versions.
-
-📚 Documentation
-
-Start with these resources:
-
-- "DSL Specification" (docs/dsl-specification.md) — Language syntax and drawing commands.
-- "PXM Format Specification" (docs/pxm-format-spec.md) — Custom project format documentation.
-- "Endesga32 Palette Reference" (docs/palette-endesga32.md) — Palette reference.
-- "Example Scripts" (examples/) — Ready-to-explore sprite definitions.
-- "Agent Skill Instructions" (SKILL.md) — Instructions for compatible AI coding agents.
-
-🧪 Testing
-
-If the repository includes a configured test suite and development dependencies, install them and run:
-
-python -m pip install -r requirements-dev.txt
-pytest tests/ -v
-
-If either the development requirements file or test directory is not present in your checkout, follow the repository's current testing instructions instead.
-
-🗺️ Roadmap
-
-Potential areas for continued development include:
-
-- More drawing primitives and palette support.
-- Improved parser diagnostics and validation.
-- Reliable transparency and animation exports.
-- Better ".pxm" project interoperability.
-- Expanded automated tests and continuous integration.
-- Easier integration with AI coding tools and creative workflows.
-
-See the "open issues" (https://github.com/riantosee/PixelMirai-Agent/issues) for current work and opportunities to contribute.
-
-🤝 Contributing
-
-Contributions, bug reports, feature requests, and constructive feedback are welcome.
-
-1. Check existing issues before starting substantial work.
-2. Create a focused branch for your changes.
-3. Include tests or reproducible examples when fixing bugs.
-4. Update the relevant documentation when behavior changes.
-5. Open a pull request describing the change and its verification.
-
-For bugs, include your Python version, operating system, command used, and a minimal example that reproduces the issue.
-
-👨‍💻 Creator
-
-Created by Rian — "@riantosee on GitHub" (https://github.com/riantosee).
-
-PixelMirai is an ongoing open-source project built around a love for pixel art, programming, and creative tooling.
-
-📄 License
-
-PixelMirai Agent is released under the "MIT License" (LICENSE).
+The exact contents may change as the project evolves.
 
 ---
 
-<div align="center">Pixel art never fades. Every pixel has a purpose.
+👨‍💻 Creator & Socials
 
-<sub>Built with Python, precision, and a love for classic game aesthetics.</sub>
+Created with passion by Rian.
 
-</div>
+- 🐙 GitHub: "@riantosee" (https://github.com/riantosee) · "@RianFix" (https://github.com/RianFix)
+- 📸 Instagram: "@bisarianbisaryan" (https://www.instagram.com/bisarianbisaryan/)
+
+"Pixel art never fades with time. Timeless in every era, precise in every grid."
+
+---
+
+📄 License
+
+This project is open-source software released under the terms of the "MIT License" (LICENSE).
